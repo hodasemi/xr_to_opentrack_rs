@@ -72,26 +72,3 @@ fn main() -> Result<()> {
         thread::sleep(Duration::from_millis(500));
     }
 }
-
-#[cfg(test)]
-mod test {
-    use std::{thread, time::Duration};
-
-    use crate::imu_reader::XrImuReader;
-    use anyhow::Result;
-
-    #[test]
-    fn test_imu_data() -> Result<()> {
-        let imu_reader = XrImuReader::new("/tmp/shader_runtime_imu_quat_data")?;
-
-        for i in 0..10 {
-            let s = imu_reader.read_all_data()?;
-
-            println!("Read {i}: {s:?}");
-
-            thread::sleep(Duration::from_secs(1));
-        }
-
-        Ok(())
-    }
-}
