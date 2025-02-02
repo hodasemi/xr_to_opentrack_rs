@@ -1,0 +1,20 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cargo",
+			"command": "run",
+			"args": [
+				"--",
+				"-d"
+			],
+			"problemMatcher": [
+				"$rustc"
+			],
+			"label": "rust: cargo run",
+			"env": {
+				"LD_LIBRARY_PATH": "viture_one_linux_sdk_1.0.7/libs"
+			}
+		}
+	]
+}
