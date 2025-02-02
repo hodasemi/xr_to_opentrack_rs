@@ -1,0 +1,9 @@
+[package]
+name = "xr_to_opentrack_rs"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = { version = "1.0.95", features = ["backtrace"] }
+memmap2 = "0.9.5"
+nalgebra = "0.33.2"
