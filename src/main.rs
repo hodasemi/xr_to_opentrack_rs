@@ -1,10 +1,11 @@
 mod imu_data;
 mod imu_reader;
 mod open_track_data;
+mod viture;
+mod viture_sys;
 
 use anyhow::Result;
 use clap::Parser;
-use imu_reader::XrImuReader;
 use open_track_data::OpenTrackData;
 use std::{
     net::{Ipv4Addr, UdpSocket},
@@ -12,6 +13,7 @@ use std::{
     thread,
     time::Duration,
 };
+use viture::Viture;
 
 /// Connector tool between xr_driver and OpenTrack
 #[derive(Debug, Parser)]
@@ -40,8 +42,12 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
 
+    println!("Starting program ...");
+
     let socket = UdpSocket::bind("127.0.0.1:0")?;
     socket.connect((args.open_track_ip, args.open_track_port))?;
+
+    println!("Created udp socket");
 
     if args.debug {
         println!(
@@ -50,25 +56,44 @@ fn main() -> Result<()> {
         );
     }
 
-    let mut framenumber = 0;
-    let imu_reader = XrImuReader::new(args.imu_shm_file)?;
-
-    if args.debug {
-        println!("Reading from shared memory file ...");
-    }
+    let _viture_sdk = create_viture_sdk(socket, args.debug);
 
     loop {
-        let imu_data = imu_reader.read_imu_data()?;
-        let open_track_data = OpenTrackData::new(imu_data, framenumber);
+        thread::sleep(Duration::from_secs(2));
+    }
+}
 
-        if args.debug {
-            println!("{open_track_data:?}");
+fn create_viture_sdk(socket: UdpSocket, enable_debug: bool) -> Viture {
+    let mut framenumber = 0;
+
+    loop {
+        thread::sleep(Duration::from_secs(2));
+
+        if enable_debug {
+            println!("Trying to initialize viture sdk ...");
         }
 
-        socket.send(&open_track_data.into_raw())?;
+        match Viture::new({
+            let socket = socket.try_clone().unwrap();
 
-        framenumber += 1;
+            move |euler| {
+                let open_track_data = OpenTrackData::from_viture_sdk(euler, framenumber);
 
-        thread::sleep(Duration::from_millis(500));
+                if enable_debug {
+                    println!("{open_track_data:?}");
+                }
+
+                if let Err(_err) = socket.send(&open_track_data.into_raw()) {
+                    return;
+                }
+
+                framenumber += 1;
+            }
+        }) {
+            Ok(viture) => return viture,
+            Err(err) => {
+                println!("ERR: {err:?}");
+            }
+        }
     }
 }

@@ -2,7 +2,7 @@ use std::mem::transmute;
 
 use nalgebra::{Quaternion, UnitQuaternion};
 
-use crate::imu_data::ImuData;
+use crate::{imu_data::ImuData, viture::Euler};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -21,7 +21,7 @@ pub struct OpenTrackData {
 }
 
 impl OpenTrackData {
-    pub fn new(imu_data: ImuData, frame_number: u32) -> Self {
+    pub fn from_shm_data(imu_data: ImuData, frame_number: u32) -> Self {
         let (roll, pitch, yaw) =
             Self::raw_quaternion_to_euler(imu_data.w, imu_data.x, imu_data.y, imu_data.z);
 
@@ -33,6 +33,22 @@ impl OpenTrackData {
             yaw: yaw as f64,
             pitch: pitch as f64,
             roll: roll as f64,
+
+            frame_number,
+
+            _padding: 0,
+        }
+    }
+
+    pub fn from_viture_sdk(euler: Euler, frame_number: u32) -> Self {
+        Self {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+
+            yaw: euler.yaw as f64,
+            pitch: euler.pitch as f64,
+            roll: euler.roll as f64,
 
             frame_number,
 
