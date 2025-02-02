@@ -49,9 +49,9 @@ impl Viture {
             let raw = unsafe { slice::from_raw_parts(data, 12) };
 
             imu_callback(Euler {
-                roll: f32::from_ne_bytes(raw[0..4].try_into().unwrap()),
-                pitch: f32::from_ne_bytes(raw[4..8].try_into().unwrap()),
-                yaw: f32::from_ne_bytes(raw[8..12].try_into().unwrap()),
+                roll: f32::from_be_bytes(raw[0..4].try_into().unwrap()),
+                pitch: f32::from_be_bytes(raw[4..8].try_into().unwrap()),
+                yaw: f32::from_be_bytes(raw[8..12].try_into().unwrap()),
             })
         }
     }

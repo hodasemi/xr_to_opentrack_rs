@@ -80,7 +80,10 @@ fn create_viture_sdk(socket: UdpSocket, enable_debug: bool) -> Viture {
                 let open_track_data = OpenTrackData::from_viture_sdk(euler, framenumber);
 
                 if enable_debug {
-                    println!("{open_track_data:?}");
+                    println!(
+                        "yaw: {:.3}, pitch: {:.3}, roll: {:.3}",
+                        open_track_data.yaw, open_track_data.pitch, open_track_data.roll
+                    );
                 }
 
                 if let Err(_err) = socket.send(&open_track_data.into_raw()) {

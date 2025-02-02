@@ -7,15 +7,15 @@ use crate::{imu_data::ImuData, viture::Euler};
 #[repr(C)]
 #[derive(Debug)]
 pub struct OpenTrackData {
-    x: f64,
-    y: f64,
-    z: f64,
+    pub x: f64,
+    pub y: f64,
+    pub z: f64,
 
-    yaw: f64,
-    pitch: f64,
-    roll: f64,
+    pub yaw: f64,
+    pub pitch: f64,
+    pub roll: f64,
 
-    frame_number: u32,
+    pub frame_number: u32,
 
     _padding: u32,
 }
