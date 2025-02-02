@@ -19,16 +19,16 @@ use std::{
 #[command(about, long_about = None)]
 struct Args {
     /// IP on which OpenTrack listens
-    #[arg(short, long)]
+    #[arg(short = 'i', long)]
     #[arg(default_value = "127.0.0.1")]
     open_track_ip: Ipv4Addr,
 
     /// Port on which OpenTrack listens
-    #[arg(short, long, default_value_t = 4242)]
+    #[arg(short = 'p', long, default_value_t = 4242)]
     open_track_port: u16,
 
     /// Path to the shared memory file to read the imu data from
-    #[arg(short, long)]
+    #[arg(short = 's', long)]
     #[arg(default_value = "/tmp/shader_runtime_imu_quat_data")]
     imu_shm_file: PathBuf,
 
