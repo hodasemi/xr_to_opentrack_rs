@@ -5,6 +5,7 @@ use nalgebra::{Quaternion, UnitQuaternion};
 use crate::imu_data::ImuData;
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct OpenTrackData {
     x: f64,
     y: f64,

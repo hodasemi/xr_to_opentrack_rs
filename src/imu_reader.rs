@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::{fs::File, path::Path};
 
 use anyhow::Result;
 use memmap2::Mmap;
@@ -11,7 +11,7 @@ pub struct XrImuReader {
 }
 
 impl XrImuReader {
-    pub fn new(file_name: &str) -> Result<Self> {
+    pub fn new(file_name: impl AsRef<Path>) -> Result<Self> {
         let file = File::open(file_name)?;
         let mmap = unsafe { Mmap::map(&file)? };
 
