@@ -7,14 +7,13 @@ use clap::Parser;
 use open_track_data::OpenTrackData;
 use std::{
     net::{Ipv4Addr, UdpSocket},
-    path::PathBuf,
     sync::mpsc::{channel, Sender},
     thread,
     time::Duration,
 };
 use viture::{Euler, Viture};
 
-/// Connector tool between xr_driver and OpenTrack
+/// Tool to provide viture imu data to OpenTrack
 #[derive(Debug, Parser)]
 #[command(version = "0.1")]
 #[command(about, long_about = None)]
@@ -27,11 +26,6 @@ struct Args {
     /// Port on which OpenTrack listens
     #[arg(short = 'p', long, default_value_t = 4242)]
     open_track_port: u16,
-
-    /// Path to the shared memory file to read the imu data from
-    #[arg(short = 's', long)]
-    #[arg(default_value = "/tmp/shader_runtime_imu_quat_data")]
-    imu_shm_file: PathBuf,
 
     /// Enable debug logging
     #[arg(short, long)]
