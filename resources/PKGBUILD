@@ -1,0 +1,29 @@
+# Maintainer: hodasemi <michaelh.95 at t-online dot de>
+_pkgbase=xr_to_opentrack_rs
+pkgname="${_pkgbase}-git"
+pkgver=0.1
+pkgrel=1
+pkgdesc="Tool to provide Viture imu data to Opentrack"
+arch=('x86_64')
+url="https://gavania.de/hodasemi/${_pkgbase}"
+license=('GPL-3.0')
+makedepends=('rust')
+depends=(libusb-1.0)
+conflicts=("${_pkgbase}")
+source=("git+${url}")
+md5sums=(SKIP)
+
+build() {
+    cd ${_pkgbase}
+
+    # build binaries
+    cargo build --release
+}
+
+package() {
+    # copy binary
+    install -Dm755 ${_pkgbase}/target/release/xr_to_opentrack_rs "${pkgdir}"/usr/bin/xr_to_opentrack_rs
+
+    # copy systemd service
+    install -Dm644 ${_pkgbase}/resources/xr_to_opentrack.service "${pkgdir}"/usr/lib/systemd/system/xr_to_opentrack.service
+}
