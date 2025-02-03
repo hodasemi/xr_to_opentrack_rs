@@ -36,9 +36,7 @@ pub enum VitureImuFrequency {
     Frequency240 = 3,
 }
 
-#[link(name = "viture_one_sdk"
-// , kind = "static"
-)]
+#[link(name = "viture_one_sdk_static", kind = "static")]
 unsafe extern "C" {
     pub unsafe fn init(
         imu_callback: Option<CallbackIMU>,

@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 fn static_library(library_name: &str) {
     println!("cargo:rustc-link-lib=static={}", library_name);
 }
@@ -14,5 +12,6 @@ fn native_path(path: &str) {
 
 fn main() {
     native_path("viture_one_linux_sdk_1.0.7/libs");
-    dynamic_library("viture_one_sdk");
+    static_library("viture_one_sdk_static");
+    dynamic_library("usb-1.0");
 }
