@@ -1,5 +1,4 @@
 mod imu_data;
-mod imu_reader;
 mod open_track_data;
 mod viture;
 mod viture_sys;
@@ -43,14 +42,16 @@ struct Args {
 fn main() -> Result<()> {
     let args = Args::parse();
 
-    println!("Starting program ...");
+    if args.debug {
+        println!("Starting program ...");
+    }
 
     let socket = UdpSocket::bind("127.0.0.1:0")?;
     socket.connect((args.open_track_ip, args.open_track_port))?;
 
-    println!("Created udp socket");
-
     if args.debug {
+        println!("Created udp socket");
+
         println!(
             "Connected udp socket to {:?}:{}",
             args.open_track_ip, args.open_track_port
