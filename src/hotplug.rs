@@ -8,18 +8,20 @@ use rusb::{Context, Device, Hotplug, HotplugBuilder, Registration, UsbContext};
 
 use crate::viture::{Euler, Viture};
 
+#[derive(Debug, Clone, Copy)]
 enum HotPlugEvent {
     Arrived,
     Left,
 }
 
 struct VitureHotPlugHandler {
+    debug: bool,
     sender: Sender<HotPlugEvent>,
 }
 
 impl VitureHotPlugHandler {
-    fn new(sender: Sender<HotPlugEvent>) -> Self {
-        Self { sender }
+    fn new(sender: Sender<HotPlugEvent>, debug: bool) -> Self {
+        Self { debug, sender }
     }
 
     fn check_ids<T: UsbContext>(device: &Device<T>) -> bool {
@@ -52,19 +54,40 @@ impl VitureHotPlugHandler {
 
 impl<T: UsbContext> Hotplug<T> for VitureHotPlugHandler {
     fn device_arrived(&mut self, device: Device<T>) {
+        if self.debug {
+            println!(
+                "hotplug event arrived received ({:04X}:{:04X})",
+                device.device_descriptor().unwrap().vendor_id(),
+                device.device_descriptor().unwrap().product_id(),
+            );
+        }
+
         if Self::check_ids(&device) {
+            if self.debug {
+                println!("hotplug event arrived sent to channel");
+            }
+
             let _ = self.sender.send(HotPlugEvent::Arrived);
         }
     }
 
     fn device_left(&mut self, device: Device<T>) {
+        if self.debug {
+            println!("hotplug event left received");
+        }
+
         if Self::check_ids(&device) {
+            if self.debug {
+                println!("hotplug event left sent to channel");
+            }
+
             let _ = self.sender.send(HotPlugEvent::Left);
         }
     }
 }
 
 pub struct VitureUsbController {
+    debug: bool,
     sender: Sender<Euler>,
 
     receiver: Receiver<HotPlugEvent>,
@@ -76,7 +99,7 @@ pub struct VitureUsbController {
 }
 
 impl VitureUsbController {
-    pub fn new(imu_sender: Sender<Euler>) -> Result<Self> {
+    pub fn new(debug: bool, imu_sender: Sender<Euler>) -> Result<Self> {
         if !rusb::has_hotplug() {
             bail!("libusb misses hotplug capabilities! (probably update needed)");
         }
@@ -87,25 +110,12 @@ impl VitureUsbController {
         let reg = Some(
             HotplugBuilder::new()
                 .enumerate(true)
-                .register(&context, Box::new(VitureHotPlugHandler::new(sender)))?,
+                .vendor_id(VitureHotPlugHandler::VITURE_ID_VENDOR)
+                .register(&context, Box::new(VitureHotPlugHandler::new(sender, debug)))?,
         );
 
-        let viture = context
-            .devices()?
-            .iter()
-            .find(|device| VitureHotPlugHandler::check_ids(device))
-            .map(|_| {
-                Viture::new({
-                    let sender = imu_sender.clone();
-
-                    move |euler| {
-                        let _ = sender.send(euler);
-                    }
-                })
-            })
-            .transpose()?;
-
         Ok(Self {
+            debug,
             sender: imu_sender,
 
             receiver,
@@ -113,18 +123,31 @@ impl VitureUsbController {
             context,
             reg,
 
-            viture,
+            viture: None,
         })
     }
 
-    pub async fn check(&mut self) -> Result<()> {
-        loop {
-            self.context.handle_events(None).unwrap();
+    pub fn check(&mut self) -> Result<()> {
+        if self.debug {
+            println!("usb controller: check")
+        }
 
-            if let Ok(hotplug_event) = self.receiver.recv_timeout(Duration::from_millis(250)) {
+        loop {
+            self.context
+                .handle_events(Some(Duration::from_millis(20)))?;
+
+            if let Ok(hotplug_event) = self.receiver.recv_timeout(Duration::from_millis(20)) {
+                if self.debug {
+                    println!("usb controller: hotplug event received: {hotplug_event:?}");
+                }
+
                 match hotplug_event {
                     HotPlugEvent::Arrived => {
                         if self.viture.is_none() {
+                            if self.debug {
+                                println!("creating viture new device connection");
+                            }
+
                             self.viture = Some(Viture::new({
                                 let sender = self.sender.clone();
 
@@ -134,7 +157,13 @@ impl VitureUsbController {
                             })?);
                         }
                     }
-                    HotPlugEvent::Left => self.viture = None,
+                    HotPlugEvent::Left => {
+                        if self.debug {
+                            println!("removing viture device connection");
+                        }
+
+                        self.viture = None;
+                    }
                 }
             }
         }
@@ -146,27 +175,3 @@ impl Drop for VitureUsbController {
         self.context.unregister_callback(self.reg.take().unwrap());
     }
 }
-
-// fn main() -> rusb::Result<()> {
-//     if rusb::has_hotplug() {
-//         let context = Context::new()?;
-
-//         let mut reg = Some(
-//             HotplugBuilder::new()
-//                 .enumerate(true)
-//                 .register(&context, Box::new(HotPlugHandler {}))?,
-//         );
-
-//         loop {
-//             context.handle_events(None).unwrap();
-//             if let Some(reg) = reg.take() {
-//                 context.unregister_callback(reg);
-//                 break;
-//             }
-//         }
-//         Ok(())
-//     } else {
-//         eprint!("libusb hotplug api unsupported");
-//         Ok(())
-//     }
-// }

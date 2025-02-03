@@ -5,12 +5,13 @@ mod viture_sys;
 
 use anyhow::Result;
 use clap::Parser;
-use futures::future::try_join;
 use hotplug::VitureUsbController;
 use open_track_data::OpenTrackData;
 use std::{
     net::{Ipv4Addr, UdpSocket},
     sync::mpsc::{channel, Receiver},
+    thread,
+    time::Duration,
 };
 use viture::Euler;
 
@@ -33,8 +34,7 @@ struct Args {
     debug: bool,
 }
 
-#[async_std::main]
-async fn main() -> Result<()> {
+fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.debug {
@@ -54,38 +54,39 @@ async fn main() -> Result<()> {
     }
 
     let (sender, receiver) = channel();
-    let mut viture_usb_controller = VitureUsbController::new(sender)?;
+    let mut viture_usb_controller = VitureUsbController::new(args.debug, sender)?;
 
-    try_join(
-        send_to_opentrack(socket, receiver, args.debug),
-        viture_usb_controller.check(),
-    )
-    .await?;
+    if args.debug {
+        println!("created everything: start loops");
+    }
+
+    thread::spawn(move || viture_usb_controller.check());
+    send_to_opentrack(socket, receiver, args.debug)?;
 
     Ok(())
 }
 
-async fn send_to_opentrack(
-    socket: UdpSocket,
-    receiver: Receiver<Euler>,
-    debug: bool,
-) -> Result<()> {
+fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<Euler>, debug: bool) -> Result<()> {
+    if debug {
+        println!("send to opentrack: start");
+    }
+
     let mut framenumber = 0;
 
     loop {
-        let euler_data = receiver.recv()?;
+        if let Ok(euler_data) = receiver.recv_timeout(Duration::from_millis(100)) {
+            let open_track_data = OpenTrackData::from_viture_sdk(euler_data, framenumber);
 
-        let open_track_data = OpenTrackData::from_viture_sdk(euler_data, framenumber);
+            if debug {
+                println!(
+                    "yaw: {:.3}, pitch: {:.3}, roll: {:.3}",
+                    open_track_data.yaw, open_track_data.pitch, open_track_data.roll
+                );
+            }
 
-        if debug {
-            println!(
-                "yaw: {:.3}, pitch: {:.3}, roll: {:.3}",
-                open_track_data.yaw, open_track_data.pitch, open_track_data.roll
-            );
+            let _ = socket.send(&open_track_data.into_raw());
+
+            framenumber += 1;
         }
-
-        let _ = socket.send(&open_track_data.into_raw());
-
-        framenumber += 1;
     }
 }
