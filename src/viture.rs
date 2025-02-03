@@ -19,11 +19,7 @@ impl Viture {
     pub fn new(callback: impl FnMut(Euler) -> () + Send + Sync + 'static) -> Result<Self> {
         *IMU_CALLBACK.lock().unwrap() = Some(Box::new(callback));
 
-        println!("calling init");
-
         let init = unsafe { init(Some(Self::imu_callback), None) };
-
-        println!("called init");
 
         if !init {
             bail!("failed to initialize viture sdk");

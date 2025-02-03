@@ -10,10 +10,11 @@ use open_track_data::OpenTrackData;
 use std::{
     net::{Ipv4Addr, UdpSocket},
     path::PathBuf,
+    sync::mpsc::{channel, Sender},
     thread,
     time::Duration,
 };
-use viture::Viture;
+use viture::{Euler, Viture};
 
 /// Connector tool between xr_driver and OpenTrack
 #[derive(Debug, Parser)]
@@ -56,41 +57,46 @@ fn main() -> Result<()> {
         );
     }
 
-    let _viture_sdk = create_viture_sdk(socket, args.debug);
+    let (sender, receiver) = channel();
 
-    loop {
-        thread::sleep(Duration::from_secs(2));
-    }
-}
-
-fn create_viture_sdk(socket: UdpSocket, enable_debug: bool) -> Viture {
+    let mut _viture_sdk = Some(create_viture_sdk(sender.clone(), args.debug));
     let mut framenumber = 0;
 
     loop {
-        thread::sleep(Duration::from_secs(2));
+        match receiver.recv_timeout(Duration::from_secs(2)) {
+            Ok(euler_data) => {
+                let open_track_data = OpenTrackData::from_viture_sdk(euler_data, framenumber);
 
-        if enable_debug {
-            println!("Trying to initialize viture sdk ...");
-        }
-
-        match Viture::new({
-            let socket = socket.try_clone().unwrap();
-
-            move |euler| {
-                let open_track_data = OpenTrackData::from_viture_sdk(euler, framenumber);
-
-                if enable_debug {
+                if args.debug {
                     println!(
                         "yaw: {:.3}, pitch: {:.3}, roll: {:.3}",
                         open_track_data.yaw, open_track_data.pitch, open_track_data.roll
                     );
                 }
 
-                if let Err(_err) = socket.send(&open_track_data.into_raw()) {
-                    return;
-                }
+                let _ = socket.send(&open_track_data.into_raw());
 
                 framenumber += 1;
+            }
+            Err(_err) => {
+                _viture_sdk = None;
+                _viture_sdk = Some(create_viture_sdk(sender.clone(), args.debug));
+            }
+        }
+    }
+}
+
+fn create_viture_sdk(sender: Sender<Euler>, enable_debug: bool) -> Viture {
+    loop {
+        if enable_debug {
+            println!("Trying to initialize viture sdk ...");
+        }
+
+        match Viture::new({
+            let sender = sender.clone();
+
+            move |euler| {
+                let _ = sender.send(euler);
             }
         }) {
             Ok(viture) => return viture,
@@ -98,5 +104,7 @@ fn create_viture_sdk(socket: UdpSocket, enable_debug: bool) -> Viture {
                 println!("ERR: {err:?}");
             }
         }
+
+        thread::sleep(Duration::from_secs(1));
     }
 }

@@ -6,7 +6,9 @@
 			"command": "run",
 			"args": [
 				"--",
-				"-d"
+				"-d",
+				"-p",
+				"4243"
 			],
 			"problemMatcher": [
 				"$rustc"
