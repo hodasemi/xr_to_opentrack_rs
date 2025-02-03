@@ -5,14 +5,14 @@ mod viture_sys;
 
 use anyhow::Result;
 use clap::Parser;
+use futures::future::try_join;
+use hotplug::VitureUsbController;
 use open_track_data::OpenTrackData;
 use std::{
     net::{Ipv4Addr, UdpSocket},
-    sync::mpsc::{channel, Sender},
-    thread,
-    time::Duration,
+    sync::mpsc::{channel, Receiver},
 };
-use viture::{Euler, Viture};
+use viture::Euler;
 
 /// Tool to provide viture imu data to OpenTrack
 #[derive(Debug, Parser)]
@@ -33,7 +33,8 @@ struct Args {
     debug: bool,
 }
 
-fn main() -> Result<()> {
+#[async_std::main]
+async fn main() -> Result<()> {
     let args = Args::parse();
 
     if args.debug {
@@ -53,53 +54,38 @@ fn main() -> Result<()> {
     }
 
     let (sender, receiver) = channel();
+    let mut viture_usb_controller = VitureUsbController::new(sender)?;
 
-    let mut _viture_sdk = Some(create_viture_sdk(sender.clone(), args.debug));
+    try_join(
+        send_to_opentrack(socket, receiver, args.debug),
+        viture_usb_controller.check(),
+    )
+    .await?;
+
+    Ok(())
+}
+
+async fn send_to_opentrack(
+    socket: UdpSocket,
+    receiver: Receiver<Euler>,
+    debug: bool,
+) -> Result<()> {
     let mut framenumber = 0;
 
     loop {
-        match receiver.recv_timeout(Duration::from_secs(2)) {
-            Ok(euler_data) => {
-                let open_track_data = OpenTrackData::from_viture_sdk(euler_data, framenumber);
+        let euler_data = receiver.recv()?;
 
-                if args.debug {
-                    println!(
-                        "yaw: {:.3}, pitch: {:.3}, roll: {:.3}",
-                        open_track_data.yaw, open_track_data.pitch, open_track_data.roll
-                    );
-                }
+        let open_track_data = OpenTrackData::from_viture_sdk(euler_data, framenumber);
 
-                let _ = socket.send(&open_track_data.into_raw());
-
-                framenumber += 1;
-            }
-            Err(_err) => {
-                _viture_sdk = None;
-                _viture_sdk = Some(create_viture_sdk(sender.clone(), args.debug));
-            }
-        }
-    }
-}
-
-fn create_viture_sdk(sender: Sender<Euler>, enable_debug: bool) -> Viture {
-    loop {
-        if enable_debug {
-            println!("Trying to initialize viture sdk ...");
+        if debug {
+            println!(
+                "yaw: {:.3}, pitch: {:.3}, roll: {:.3}",
+                open_track_data.yaw, open_track_data.pitch, open_track_data.roll
+            );
         }
 
-        match Viture::new({
-            let sender = sender.clone();
+        let _ = socket.send(&open_track_data.into_raw());
 
-            move |euler| {
-                let _ = sender.send(euler);
-            }
-        }) {
-            Ok(viture) => return viture,
-            Err(err) => {
-                println!("ERR: {err:?}");
-            }
-        }
-
-        thread::sleep(Duration::from_secs(1));
+        framenumber += 1;
     }
 }
