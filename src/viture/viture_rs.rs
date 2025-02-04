@@ -1,13 +1,8 @@
 use anyhow::{bail, Result};
 use std::{slice, sync::Mutex};
 
-use crate::viture_sys::*;
-
-pub struct Euler {
-    pub roll: f32,
-    pub pitch: f32,
-    pub yaw: f32,
-}
+use super::viture_sys::*;
+use crate::euler::Euler;
 
 static IMU_CALLBACK: Mutex<Option<Box<dyn FnMut(Euler) -> () + Send + Sync + 'static>>> =
     Mutex::new(None);

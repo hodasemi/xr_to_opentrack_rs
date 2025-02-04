@@ -1,18 +1,21 @@
+mod euler;
 mod hotplug;
 mod open_track_data;
 mod viture;
-mod viture_sys;
 
+use crate::euler::Euler;
 use anyhow::Result;
 use clap::Parser;
 use hotplug::VitureUsbController;
 use open_track_data::OpenTrackData;
+use serde::{Deserialize, Serialize};
+use serde_json::{from_str, to_string};
 use std::{
-    net::{Ipv4Addr, UdpSocket},
+    io::{Read, Write},
+    net::{Ipv4Addr, TcpListener, TcpStream, UdpSocket},
     sync::mpsc::{channel, Receiver},
     thread,
 };
-use viture::Euler;
 
 /// Tool to provide viture imu data to OpenTrack
 #[derive(Debug, Parser)]
@@ -31,10 +34,31 @@ struct Args {
     /// Enable debug logging
     #[arg(short, long)]
     debug: bool,
+
+    /// Recenters to current position
+    #[arg(short, long)]
+    center: bool,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+enum Command {
+    Recenter,
+}
+
+const TCP_SOCKET: u16 = 4244;
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
+    if let Some(commands) = check_cli_commands(&args) {
+        let mut client = TcpStream::connect(("127.0.0.1", TCP_SOCKET))?;
+
+        for command in commands {
+            client.write_all(to_string(&command)?.as_bytes())?;
+        }
+
+        return Ok(());
+    }
 
     if args.debug {
         println!("Starting program ...");
@@ -70,7 +94,10 @@ fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<Euler>, debug: bool) 
         println!("send to opentrack: start");
     }
 
+    let mut server = TcpListener::bind(("127.0.0.1", TCP_SOCKET))?;
+
     let mut framenumber = 0;
+    let mut reference_euler = None;
 
     loop {
         let euler_data = receiver.recv()?;
@@ -86,5 +113,49 @@ fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<Euler>, debug: bool) 
         let _ = socket.send(&open_track_data.into_raw());
 
         framenumber += 1;
+    }
+}
+
+fn check_tcp_command(server: &mut TcpListener) -> Option<Vec<Command>> {
+    let mut commands = server
+        .incoming()
+        .map(|stream_res| {
+            stream_res.map(|stream| {
+                let tmp: Vec<Command> = Vec::new();
+                let buf = String::new();
+
+                loop {
+                    let len = stream.read_to_string(&mut buf)?;
+
+                    if len == 0 {
+                        break;
+                    }
+
+                    tmp.push(from_str(&buf)?);
+                }
+
+                Ok(tmp)
+            })
+        })
+        .collect::<Result<Result<Vec<Command>>>>();
+
+    if commands.is_empty() {
+        None
+    } else {
+        Some(commands)
+    }
+}
+
+fn check_cli_commands(args: &Args) -> Option<Vec<Command>> {
+    let mut commands = Vec::new();
+
+    if args.center {
+        commands.push(Command::Recenter);
+    }
+
+    if commands.is_empty() {
+        None
+    } else {
+        Some(commands)
     }
 }

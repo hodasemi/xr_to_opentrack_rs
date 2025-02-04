@@ -1,6 +1,6 @@
 use std::mem::transmute;
 
-use crate::viture::Euler;
+use crate::euler::Euler;
 
 #[repr(C)]
 #[derive(Debug)]
