@@ -11,7 +11,6 @@ use std::{
     net::{Ipv4Addr, UdpSocket},
     sync::mpsc::{channel, Receiver},
     thread,
-    time::Duration,
 };
 use viture::Euler;
 
@@ -74,19 +73,18 @@ fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<Euler>, debug: bool) 
     let mut framenumber = 0;
 
     loop {
-        if let Ok(euler_data) = receiver.recv_timeout(Duration::from_millis(100)) {
-            let open_track_data = OpenTrackData::from_viture_sdk(euler_data, framenumber);
+        let euler_data = receiver.recv()?;
+        let open_track_data = OpenTrackData::from_viture_sdk(euler_data, framenumber);
 
-            if debug {
-                println!(
-                    "yaw: {:.3}, pitch: {:.3}, roll: {:.3}",
-                    open_track_data.yaw, open_track_data.pitch, open_track_data.roll
-                );
-            }
-
-            let _ = socket.send(&open_track_data.into_raw());
-
-            framenumber += 1;
+        if debug {
+            println!(
+                "yaw: {:.3}, pitch: {:.3}, roll: {:.3}",
+                open_track_data.yaw, open_track_data.pitch, open_track_data.roll
+            );
         }
+
+        let _ = socket.send(&open_track_data.into_raw());
+
+        framenumber += 1;
     }
 }
