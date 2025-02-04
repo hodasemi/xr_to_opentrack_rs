@@ -144,9 +144,7 @@ impl VitureUsbController {
                 match hotplug_event {
                     HotPlugEvent::Arrived => {
                         if self.viture.is_none() {
-                            if self.debug {
-                                println!("creating viture new device connection");
-                            }
+                            println!("Add Viture Device");
 
                             self.viture = Some(Viture::new({
                                 let sender = self.sender.clone();
@@ -158,11 +156,10 @@ impl VitureUsbController {
                         }
                     }
                     HotPlugEvent::Left => {
-                        if self.debug {
-                            println!("removing viture device connection");
+                        if self.viture.is_some() {
+                            println!("Remove Viture Device");
+                            self.viture = None;
                         }
-
-                        self.viture = None;
                     }
                 }
             }
