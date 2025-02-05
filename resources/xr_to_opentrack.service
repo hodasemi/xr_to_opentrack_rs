@@ -4,7 +4,7 @@ After=multi-user.target
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/xr_to_opentrack_rs -p 4243
+ExecStart=/usr/bin/xr_to_opentrack_rs
 Restart=always
 TimeoutSec=10
 
