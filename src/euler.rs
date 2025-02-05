@@ -58,11 +58,15 @@ impl EulerHandler {
         }
     }
 
-    pub fn apply_commands(&mut self, commands: Vec<Command>, euler: EulerData) {
+    pub fn apply_commands(&mut self, commands: Vec<Command>, euler: Option<EulerData>) {
+        if self.debug {
+            println!("apply command: {commands:#?}");
+        }
+
         for command in commands {
             match command {
                 Command::Recenter => {
-                    self.reference = Some(euler);
+                    self.reference = euler;
 
                     if self.debug {
                         println!("new center: {:?}", self.reference);

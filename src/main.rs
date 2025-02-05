@@ -4,17 +4,22 @@ mod open_track_data;
 mod viture;
 
 use crate::euler::EulerData;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use clap::Parser;
 use euler::EulerHandler;
 use hotplug::VitureUsbController;
 use open_track_data::OpenTrackData;
+use ring_channel::ring_channel;
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, to_string};
 use std::{
     io::{Read, Write},
     net::{Ipv4Addr, TcpListener, TcpStream, UdpSocket},
-    sync::mpsc::{channel, Receiver},
+    num::NonZeroUsize,
+    sync::{
+        mpsc::{channel, Receiver},
+        Arc, Mutex,
+    },
     thread,
 };
 
@@ -110,19 +115,45 @@ fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<EulerData>, debug: bo
         println!("send to opentrack: start");
     }
 
-    let mut server = TcpListener::bind(("127.0.0.1", TCP_SOCKET))?;
-
     let mut framenumber = 0;
-    let mut euler_handler = EulerHandler::new(debug);
+    let euler_handler: Arc<Mutex<EulerHandler>> = Arc::new(Mutex::new(EulerHandler::new(debug)));
+
+    let mut server = TcpListener::bind(("127.0.0.1", TCP_SOCKET))?;
+    let (euler_sender, euler_receiver) = ring_channel(NonZeroUsize::new(1).unwrap());
+
+    thread::spawn({
+        let euler_handler = euler_handler.clone();
+
+        move || loop {
+            match check_tcp_command(&mut server, debug) {
+                Ok(commands) => {
+                    if let Some(commands) = commands {
+                        let last_euler = euler_receiver.try_recv().ok();
+
+                        if debug {
+                            println!("received command: {commands:#?}");
+                        }
+
+                        euler_handler
+                            .lock()
+                            .unwrap()
+                            .apply_commands(commands, last_euler);
+                    }
+                }
+                Err(err) => {
+                    if debug {
+                        println!("tcp error: {err:?}");
+                    }
+                }
+            }
+        }
+    });
 
     loop {
         let mut euler_data = receiver.recv()?;
 
-        if let Some(commands) = check_tcp_command(&mut server) {
-            euler_handler.apply_commands(commands, euler_data);
-        }
-
-        euler_data = euler_handler.apply_config(euler_data);
+        euler_sender.send(euler_data)?;
+        euler_data = euler_handler.lock().unwrap().apply_config(euler_data);
 
         let open_track_data = OpenTrackData::from_viture_sdk(euler_data, framenumber);
 
@@ -139,41 +170,48 @@ fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<EulerData>, debug: bo
     }
 }
 
-fn check_tcp_command(server: &mut TcpListener) -> Option<Vec<Command>> {
-    let commands = server
-        .incoming()
-        .map(|stream_res| {
-            stream_res
-                .map(|mut stream| {
-                    let mut tmp: Vec<Command> = Vec::new();
-                    let mut buf = String::new();
+fn check_tcp_command(server: &mut TcpListener, debug: bool) -> Result<Option<Vec<Command>>> {
+    let mut commands = Vec::new();
 
-                    loop {
-                        let len = stream.read_to_string(&mut buf)?;
+    let (mut stream, _) = server.accept()?;
 
-                        if len == 0 {
-                            break;
-                        }
+    if debug {
+        println!("incoming stream")
+    }
 
-                        tmp.push(from_str(&buf)?);
-                    }
+    let mut buf = String::new();
 
-                    Ok(tmp)
-                })
-                .map_err(|err| anyhow!("stream error: {err:?}"))
-        })
-        .collect::<Result<Result<Vec<Vec<Command>>>>>()
-        .ok()?
-        .ok()?
-        .into_iter()
-        .flatten()
-        .collect::<Vec<Command>>();
+    loop {
+        let len = stream.read_to_string(&mut buf)?;
 
-    if commands.is_empty() {
+        if len == 0 {
+            if debug {
+                println!("received empty message");
+            }
+
+            break;
+        }
+
+        if debug {
+            println!("received message: {buf}");
+        }
+
+        commands.push(from_str(&buf)?);
+    }
+
+    if debug {
+        println!("received commands: {commands:#?}");
+    }
+
+    if debug {
+        println!("command collection: {commands:#?}");
+    }
+
+    Ok(if commands.is_empty() {
         None
     } else {
         Some(commands)
-    }
+    })
 }
 
 fn check_cli_commands(args: &Args) -> Option<Vec<Command>> {
