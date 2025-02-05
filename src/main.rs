@@ -41,6 +41,10 @@ struct Args {
     #[arg(short, long)]
     debug: bool,
 
+    /// Enable verbose logging
+    #[arg(short, long)]
+    verbose: bool,
+
     /// Recenters to current position
     #[arg(long)]
     center: bool,
@@ -56,14 +60,31 @@ struct Args {
     /// Scale roll output
     #[arg(long = "sr")]
     scale_roll: Option<f32>,
+
+    /// Invert yaw output
+    #[arg(long = "iy")]
+    invert_yaw: Option<bool>,
+
+    /// Invert pitch output
+    #[arg(long = "ip")]
+    invert_pitch: Option<bool>,
+
+    /// Invert roll output
+    #[arg(long = "ir")]
+    invert_roll: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 enum Command {
     Recenter,
+
     ScaleYaw(f32),
     ScalePitch(f32),
     ScaleRoll(f32),
+
+    InvertYaw(bool),
+    InvertPitch(bool),
+    InvertRoll(bool),
 }
 
 const TCP_SOCKET: u16 = 4244;
@@ -105,12 +126,17 @@ fn main() -> Result<()> {
     }
 
     thread::spawn(move || viture_usb_controller.check());
-    send_to_opentrack(socket, receiver, args.debug)?;
+    send_to_opentrack(socket, receiver, args.debug, args.verbose)?;
 
     Ok(())
 }
 
-fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<EulerData>, debug: bool) -> Result<()> {
+fn send_to_opentrack(
+    socket: UdpSocket,
+    receiver: Receiver<EulerData>,
+    debug: bool,
+    verbose: bool,
+) -> Result<()> {
     if debug {
         println!("send to opentrack: start");
     }
@@ -157,7 +183,7 @@ fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<EulerData>, debug: bo
 
         let open_track_data = OpenTrackData::from_viture_sdk(euler_data, framenumber);
 
-        if debug {
+        if debug && verbose {
             println!(
                 "yaw: {:.3}, pitch: {:.3}, roll: {:.3}",
                 open_track_data.yaw, open_track_data.pitch, open_track_data.roll
@@ -238,6 +264,18 @@ fn check_cli_commands(args: &Args) -> Option<Vec<Command>> {
 
     if let Some(f) = args.scale_yaw {
         commands.push(Command::ScaleYaw(f));
+    }
+
+    if let Some(i) = args.invert_pitch {
+        commands.push(Command::InvertPitch(i));
+    }
+
+    if let Some(i) = args.invert_roll {
+        commands.push(Command::InvertRoll(i));
+    }
+
+    if let Some(i) = args.invert_yaw {
+        commands.push(Command::InvertYaw(i));
     }
 
     if commands.is_empty() {
