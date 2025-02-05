@@ -2,7 +2,7 @@ use std::ops::Sub;
 
 use crate::Command;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct EulerData {
     pub roll: f32,
     pub pitch: f32,
@@ -162,5 +162,70 @@ impl EulerHandler {
         }
 
         euler
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::Command;
+
+    use super::{EulerData, EulerHandler};
+
+    #[test]
+    fn euler_center() {
+        let mut euler_handler = EulerHandler::new(false);
+
+        let reference_euler = EulerData {
+            roll: 10.0,
+            pitch: 10.0,
+            yaw: 10.0,
+        };
+
+        euler_handler.apply_commands(vec![Command::Recenter], Some(reference_euler));
+
+        let test_euler = EulerData {
+            roll: 5.0,
+            pitch: 12.0,
+            yaw: 0.0,
+        };
+
+        assert_eq!(
+            euler_handler.apply_config(test_euler),
+            EulerData {
+                roll: -5.0,
+                pitch: 2.0,
+                yaw: -10.0
+            }
+        );
+    }
+
+    #[test]
+    fn euler_scale_invert() {
+        let mut euler_handler = EulerHandler::new(false);
+
+        euler_handler.apply_commands(
+            vec![
+                Command::ScaleYaw(10.0),
+                Command::ScaleRoll(20.0),
+                Command::ScalePitch(30.0),
+                Command::InvertPitch(true),
+            ],
+            None,
+        );
+
+        let test_euler = EulerData {
+            roll: 2.0,
+            pitch: 2.0,
+            yaw: 2.0,
+        };
+
+        assert_eq!(
+            euler_handler.apply_config(test_euler),
+            EulerData {
+                roll: 40.0,
+                pitch: -60.0,
+                yaw: 20.0
+            }
+        );
     }
 }
