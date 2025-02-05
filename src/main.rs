@@ -243,13 +243,6 @@ fn check_tcp_command(server: &mut TcpListener, debug: bool) -> Result<Option<Vec
 fn check_cli_commands(args: &Args) -> Option<Vec<Command>> {
     let mut commands = Vec::new();
 
-    if args.debug {
-        println!("center: {:?}", args.center);
-        println!("scale_pitch: {:?}", args.scale_pitch);
-        println!("scale_roll: {:?}", args.scale_roll);
-        println!("scale_yaw: {:?}", args.scale_yaw);
-    }
-
     if args.center {
         commands.push(Command::Recenter);
     }
@@ -276,6 +269,10 @@ fn check_cli_commands(args: &Args) -> Option<Vec<Command>> {
 
     if let Some(i) = args.invert_yaw {
         commands.push(Command::InvertYaw(i));
+    }
+
+    if args.debug {
+        println!("{commands:#?}");
     }
 
     if commands.is_empty() {
