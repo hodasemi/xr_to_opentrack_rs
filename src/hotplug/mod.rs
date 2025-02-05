@@ -9,7 +9,7 @@ use anyhow::{bail, Result};
 use rusb::{Context, HotplugBuilder, Registration, UsbContext};
 use viture_hotplug::VitureHotPlugHandler;
 
-use crate::{euler::Euler, viture::viture_rs::Viture};
+use crate::{euler::EulerData, viture::viture_rs::Viture};
 
 #[derive(Debug, Clone, Copy)]
 enum HotPlugEvent {
@@ -19,7 +19,7 @@ enum HotPlugEvent {
 
 pub struct VitureUsbController {
     debug: bool,
-    sender: Sender<Euler>,
+    sender: Sender<EulerData>,
 
     receiver: Receiver<HotPlugEvent>,
 
@@ -30,7 +30,7 @@ pub struct VitureUsbController {
 }
 
 impl VitureUsbController {
-    pub fn new(debug: bool, imu_sender: Sender<Euler>) -> Result<Self> {
+    pub fn new(debug: bool, imu_sender: Sender<EulerData>) -> Result<Self> {
         if !rusb::has_hotplug() {
             bail!("libusb misses hotplug capabilities! (probably update needed)");
         }

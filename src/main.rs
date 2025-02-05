@@ -3,9 +3,10 @@ mod hotplug;
 mod open_track_data;
 mod viture;
 
-use crate::euler::Euler;
-use anyhow::Result;
+use crate::euler::EulerData;
+use anyhow::{anyhow, Result};
 use clap::Parser;
+use euler::EulerHandler;
 use hotplug::VitureUsbController;
 use open_track_data::OpenTrackData;
 use serde::{Deserialize, Serialize};
@@ -36,13 +37,28 @@ struct Args {
     debug: bool,
 
     /// Recenters to current position
-    #[arg(short, long)]
+    #[arg(long)]
     center: bool,
+
+    /// Scale yaw output
+    #[arg(long = "sy")]
+    scale_yaw: Option<f32>,
+
+    /// Scale pitch output
+    #[arg(long = "sp")]
+    scale_pitch: Option<f32>,
+
+    /// Scale roll output
+    #[arg(long = "sr")]
+    scale_roll: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 enum Command {
     Recenter,
+    ScaleYaw(f32),
+    ScalePitch(f32),
+    ScaleRoll(f32),
 }
 
 const TCP_SOCKET: u16 = 4244;
@@ -89,7 +105,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<Euler>, debug: bool) -> Result<()> {
+fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<EulerData>, debug: bool) -> Result<()> {
     if debug {
         println!("send to opentrack: start");
     }
@@ -97,10 +113,17 @@ fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<Euler>, debug: bool) 
     let mut server = TcpListener::bind(("127.0.0.1", TCP_SOCKET))?;
 
     let mut framenumber = 0;
-    let mut reference_euler = None;
+    let mut euler_handler = EulerHandler::new(debug);
 
     loop {
-        let euler_data = receiver.recv()?;
+        let mut euler_data = receiver.recv()?;
+
+        if let Some(commands) = check_tcp_command(&mut server) {
+            euler_handler.apply_commands(commands, euler_data);
+        }
+
+        euler_data = euler_handler.apply_config(euler_data);
+
         let open_track_data = OpenTrackData::from_viture_sdk(euler_data, framenumber);
 
         if debug {
@@ -117,27 +140,34 @@ fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<Euler>, debug: bool) 
 }
 
 fn check_tcp_command(server: &mut TcpListener) -> Option<Vec<Command>> {
-    let mut commands = server
+    let commands = server
         .incoming()
         .map(|stream_res| {
-            stream_res.map(|stream| {
-                let tmp: Vec<Command> = Vec::new();
-                let buf = String::new();
+            stream_res
+                .map(|mut stream| {
+                    let mut tmp: Vec<Command> = Vec::new();
+                    let mut buf = String::new();
 
-                loop {
-                    let len = stream.read_to_string(&mut buf)?;
+                    loop {
+                        let len = stream.read_to_string(&mut buf)?;
 
-                    if len == 0 {
-                        break;
+                        if len == 0 {
+                            break;
+                        }
+
+                        tmp.push(from_str(&buf)?);
                     }
 
-                    tmp.push(from_str(&buf)?);
-                }
-
-                Ok(tmp)
-            })
+                    Ok(tmp)
+                })
+                .map_err(|err| anyhow!("stream error: {err:?}"))
         })
-        .collect::<Result<Result<Vec<Command>>>>();
+        .collect::<Result<Result<Vec<Vec<Command>>>>>()
+        .ok()?
+        .ok()?
+        .into_iter()
+        .flatten()
+        .collect::<Vec<Command>>();
 
     if commands.is_empty() {
         None
@@ -149,8 +179,27 @@ fn check_tcp_command(server: &mut TcpListener) -> Option<Vec<Command>> {
 fn check_cli_commands(args: &Args) -> Option<Vec<Command>> {
     let mut commands = Vec::new();
 
+    if args.debug {
+        println!("center: {:?}", args.center);
+        println!("scale_pitch: {:?}", args.scale_pitch);
+        println!("scale_roll: {:?}", args.scale_roll);
+        println!("scale_yaw: {:?}", args.scale_yaw);
+    }
+
     if args.center {
         commands.push(Command::Recenter);
+    }
+
+    if let Some(f) = args.scale_pitch {
+        commands.push(Command::ScalePitch(f));
+    }
+
+    if let Some(f) = args.scale_roll {
+        commands.push(Command::ScaleRoll(f));
+    }
+
+    if let Some(f) = args.scale_yaw {
+        commands.push(Command::ScaleYaw(f));
     }
 
     if commands.is_empty() {
