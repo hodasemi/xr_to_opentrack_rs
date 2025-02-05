@@ -1,18 +1,27 @@
+mod euler;
 mod hotplug;
 mod open_track_data;
 mod viture;
-mod viture_sys;
 
+use crate::euler::EulerData;
 use anyhow::Result;
 use clap::Parser;
+use euler::EulerHandler;
 use hotplug::VitureUsbController;
 use open_track_data::OpenTrackData;
+use ring_channel::ring_channel;
+use serde::{Deserialize, Serialize};
+use serde_json::{from_str, to_string};
 use std::{
-    net::{Ipv4Addr, UdpSocket},
-    sync::mpsc::{channel, Receiver},
+    io::{Read, Write},
+    net::{Ipv4Addr, TcpListener, TcpStream, UdpSocket},
+    num::NonZeroUsize,
+    sync::{
+        mpsc::{channel, Receiver},
+        Arc, Mutex,
+    },
     thread,
 };
-use viture::Euler;
 
 /// Tool to provide viture imu data to OpenTrack
 #[derive(Debug, Parser)]
@@ -31,10 +40,46 @@ struct Args {
     /// Enable debug logging
     #[arg(short, long)]
     debug: bool,
+
+    /// Recenters to current position
+    #[arg(long)]
+    center: bool,
+
+    /// Scale yaw output
+    #[arg(long = "sy")]
+    scale_yaw: Option<f32>,
+
+    /// Scale pitch output
+    #[arg(long = "sp")]
+    scale_pitch: Option<f32>,
+
+    /// Scale roll output
+    #[arg(long = "sr")]
+    scale_roll: Option<f32>,
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+enum Command {
+    Recenter,
+    ScaleYaw(f32),
+    ScalePitch(f32),
+    ScaleRoll(f32),
+}
+
+const TCP_SOCKET: u16 = 4244;
 
 fn main() -> Result<()> {
     let args = Args::parse();
+
+    if let Some(commands) = check_cli_commands(&args) {
+        let mut client = TcpStream::connect(("127.0.0.1", TCP_SOCKET))?;
+
+        for command in commands {
+            client.write_all(to_string(&command)?.as_bytes())?;
+        }
+
+        return Ok(());
+    }
 
     if args.debug {
         println!("Starting program ...");
@@ -65,15 +110,51 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<Euler>, debug: bool) -> Result<()> {
+fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<EulerData>, debug: bool) -> Result<()> {
     if debug {
         println!("send to opentrack: start");
     }
 
     let mut framenumber = 0;
+    let euler_handler: Arc<Mutex<EulerHandler>> = Arc::new(Mutex::new(EulerHandler::new(debug)));
+
+    let mut server = TcpListener::bind(("127.0.0.1", TCP_SOCKET))?;
+    let (euler_sender, euler_receiver) = ring_channel(NonZeroUsize::new(1).unwrap());
+
+    thread::spawn({
+        let euler_handler = euler_handler.clone();
+
+        move || loop {
+            match check_tcp_command(&mut server, debug) {
+                Ok(commands) => {
+                    if let Some(commands) = commands {
+                        let last_euler = euler_receiver.try_recv().ok();
+
+                        if debug {
+                            println!("received command: {commands:#?}");
+                        }
+
+                        euler_handler
+                            .lock()
+                            .unwrap()
+                            .apply_commands(commands, last_euler);
+                    }
+                }
+                Err(err) => {
+                    if debug {
+                        println!("tcp error: {err:?}");
+                    }
+                }
+            }
+        }
+    });
 
     loop {
-        let euler_data = receiver.recv()?;
+        let mut euler_data = receiver.recv()?;
+
+        euler_sender.send(euler_data)?;
+        euler_data = euler_handler.lock().unwrap().apply_config(euler_data);
+
         let open_track_data = OpenTrackData::from_viture_sdk(euler_data, framenumber);
 
         if debug {
@@ -86,5 +167,82 @@ fn send_to_opentrack(socket: UdpSocket, receiver: Receiver<Euler>, debug: bool) 
         let _ = socket.send(&open_track_data.into_raw());
 
         framenumber += 1;
+    }
+}
+
+fn check_tcp_command(server: &mut TcpListener, debug: bool) -> Result<Option<Vec<Command>>> {
+    let mut commands = Vec::new();
+
+    let (mut stream, _) = server.accept()?;
+
+    if debug {
+        println!("incoming stream")
+    }
+
+    let mut buf = String::new();
+
+    loop {
+        let len = stream.read_to_string(&mut buf)?;
+
+        if len == 0 {
+            if debug {
+                println!("received empty message");
+            }
+
+            break;
+        }
+
+        if debug {
+            println!("received message: {buf}");
+        }
+
+        commands.push(from_str(&buf)?);
+    }
+
+    if debug {
+        println!("received commands: {commands:#?}");
+    }
+
+    if debug {
+        println!("command collection: {commands:#?}");
+    }
+
+    Ok(if commands.is_empty() {
+        None
+    } else {
+        Some(commands)
+    })
+}
+
+fn check_cli_commands(args: &Args) -> Option<Vec<Command>> {
+    let mut commands = Vec::new();
+
+    if args.debug {
+        println!("center: {:?}", args.center);
+        println!("scale_pitch: {:?}", args.scale_pitch);
+        println!("scale_roll: {:?}", args.scale_roll);
+        println!("scale_yaw: {:?}", args.scale_yaw);
+    }
+
+    if args.center {
+        commands.push(Command::Recenter);
+    }
+
+    if let Some(f) = args.scale_pitch {
+        commands.push(Command::ScalePitch(f));
+    }
+
+    if let Some(f) = args.scale_roll {
+        commands.push(Command::ScaleRoll(f));
+    }
+
+    if let Some(f) = args.scale_yaw {
+        commands.push(Command::ScaleYaw(f));
+    }
+
+    if commands.is_empty() {
+        None
+    } else {
+        Some(commands)
     }
 }

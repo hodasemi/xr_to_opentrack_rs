@@ -1,22 +1,17 @@
 use anyhow::{bail, Result};
 use std::{slice, sync::Mutex};
 
-use crate::viture_sys::*;
+use super::viture_sys::*;
+use crate::euler::EulerData;
 
-pub struct Euler {
-    pub roll: f32,
-    pub pitch: f32,
-    pub yaw: f32,
-}
-
-static IMU_CALLBACK: Mutex<Option<Box<dyn FnMut(Euler) -> () + Send + Sync + 'static>>> =
+static IMU_CALLBACK: Mutex<Option<Box<dyn FnMut(EulerData) -> () + Send + Sync + 'static>>> =
     Mutex::new(None);
 
 #[derive(Clone)]
 pub struct Viture {}
 
 impl Viture {
-    pub fn new(callback: impl FnMut(Euler) -> () + Send + Sync + 'static) -> Result<Self> {
+    pub fn new(callback: impl FnMut(EulerData) -> () + Send + Sync + 'static) -> Result<Self> {
         *IMU_CALLBACK.lock().unwrap() = Some(Box::new(callback));
 
         let init = unsafe { init(Some(Self::imu_callback), None) };
@@ -44,7 +39,7 @@ impl Viture {
         if let Some(imu_callback) = &mut *IMU_CALLBACK.lock().unwrap() {
             let raw = unsafe { slice::from_raw_parts(data, 12) };
 
-            imu_callback(Euler {
+            imu_callback(EulerData {
                 roll: f32::from_be_bytes(raw[0..4].try_into().unwrap()),
                 pitch: f32::from_be_bytes(raw[4..8].try_into().unwrap()),
                 yaw: f32::from_be_bytes(raw[8..12].try_into().unwrap()),

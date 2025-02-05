@@ -1,6 +1,6 @@
 use std::mem::transmute;
 
-use crate::viture::Euler;
+use crate::euler::EulerData;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -19,7 +19,7 @@ pub struct OpenTrackData {
 }
 
 impl OpenTrackData {
-    pub fn from_viture_sdk(euler: Euler, frame_number: u32) -> Self {
+    pub fn from_viture_sdk(euler: EulerData, frame_number: u32) -> Self {
         Self {
             x: 0.0,
             y: 0.0,
