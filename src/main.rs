@@ -97,6 +97,7 @@ fn main() -> Result<()> {
 
         for command in commands {
             client.write_all(to_string(&command)?.as_bytes())?;
+            client.write(";".as_bytes())?;
         }
 
         return Ok(());
@@ -205,9 +206,8 @@ fn check_tcp_command(server: &mut TcpListener, debug: bool) -> Result<Option<Vec
         println!("incoming stream")
     }
 
-    let mut buf = String::new();
-
     loop {
+        let mut buf = String::new();
         let len = stream.read_to_string(&mut buf)?;
 
         if len == 0 {
@@ -222,15 +222,15 @@ fn check_tcp_command(server: &mut TcpListener, debug: bool) -> Result<Option<Vec
             println!("received message: {buf}");
         }
 
-        commands.push(from_str(&buf)?);
+        for split in buf.split(";") {
+            if let Ok(cmd) = from_str(split) {
+                commands.push(cmd);
+            }
+        }
     }
 
     if debug {
         println!("received commands: {commands:#?}");
-    }
-
-    if debug {
-        println!("command collection: {commands:#?}");
     }
 
     Ok(if commands.is_empty() {
