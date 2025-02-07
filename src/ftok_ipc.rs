@@ -1,0 +1,118 @@
+#![allow(unused)]
+
+use std::{ffi::CString, ptr};
+
+use anyhow::{bail, Result};
+use libc::*;
+
+pub struct FtokIPC<T: Default + Copy, const N: usize> {
+    buffer: [T; N],
+    addr: *mut c_void,
+}
+
+impl<T: Default + Copy, const N: usize> FtokIPC<T, N> {
+    pub fn new(path: &str) -> Result<Self> {
+        let cpath = CString::new(path)?;
+
+        let key = unsafe { ftok(cpath.as_ptr(), 0) };
+
+        if key == -1 {
+            bail!("failed to get ftok key");
+        }
+
+        let shmid = unsafe { shmget(key, size_of::<f32>() * 15, 0) };
+
+        if shmid == -1 {
+            bail!("failed to get shmid");
+        }
+
+        let addr = unsafe { shmat(shmid, ptr::null(), 0) };
+
+        if addr == ptr::null_mut() {
+            bail!("failed to attach to shared memory");
+        }
+
+        Ok(Self {
+            buffer: [T::default(); N],
+            addr,
+        })
+    }
+
+    pub fn read(&mut self) -> [T; N] {
+        unsafe {
+            memcpy(
+                self.buffer.as_mut_ptr() as *mut c_void,
+                self.addr,
+                size_of::<T>() * N,
+            )
+        };
+
+        self.buffer
+    }
+}
+
+impl<T: Default + Copy, const N: usize> Drop for FtokIPC<T, N> {
+    fn drop(&mut self) {
+        let res = unsafe { shmdt(self.addr) };
+
+        if res == -1 {
+            panic!("failed to detach from shared memory");
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::{f32::consts::PI, net::UdpSocket, thread, time::Duration};
+
+    use crate::{euler::EulerData, open_track_data::OpenTrackData};
+
+    use super::*;
+    use anyhow::Result;
+
+    use nalgebra::{Quaternion, UnitQuaternion};
+
+    pub fn raw_quaternion_to_euler(w: f32, x: f32, y: f32, z: f32) -> (f32, f32, f32) {
+        let unit_quat = UnitQuaternion::from_quaternion(Quaternion::new(w, x, y, z));
+        unit_quat.euler_angles()
+    }
+
+    fn bytes_to_f32(b: &[u8]) -> f32 {
+        assert_eq!(b.len(), 4);
+
+        f32::from_ne_bytes(b.try_into().unwrap())
+    }
+
+    #[test]
+    fn test_ipc() -> Result<()> {
+        let path = "/tmp/shader_runtime_imu_quat_data";
+
+        let mut ipc = FtokIPC::<f32, 4>::new(path)?;
+
+        let socket = UdpSocket::bind("127.0.0.1:0")?;
+        socket.connect("127.0.0.1:4242")?;
+
+        let mut framenumber = 0;
+
+        loop {
+            let b = ipc.read();
+
+            let (roll, pitch, yaw) = raw_quaternion_to_euler(b[3], b[0], b[1], b[2]);
+
+            let ot_data = OpenTrackData::from_viture_sdk(
+                EulerData {
+                    roll: roll * 180.0 / PI,
+                    pitch: pitch * 180.0 / PI,
+                    yaw: yaw * 180.0 / PI,
+                },
+                framenumber,
+            );
+
+            let _ = socket.send(&ot_data.into_raw());
+
+            framenumber += 1;
+
+            thread::sleep(Duration::from_millis(16));
+        }
+    }
+}
