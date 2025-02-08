@@ -20,7 +20,7 @@ impl<T: Default + Copy, const N: usize> FtokIPC<T, N> {
             bail!("failed to get ftok key");
         }
 
-        let shmid = unsafe { shmget(key, size_of::<f32>() * 15, 0) };
+        let shmid = unsafe { shmget(key, size_of::<T>() * N, 0) };
 
         if shmid == -1 {
             bail!("failed to get shmid");
@@ -77,10 +77,8 @@ mod test {
         unit_quat.euler_angles()
     }
 
-    fn bytes_to_f32(b: &[u8]) -> f32 {
-        assert_eq!(b.len(), 4);
-
-        f32::from_ne_bytes(b.try_into().unwrap())
+    pub fn radian_to_degree(r: f32) -> f32 {
+        r * 180.0 / PI
     }
 
     #[test]
@@ -101,9 +99,9 @@ mod test {
 
             let ot_data = OpenTrackData::from_viture_sdk(
                 EulerData {
-                    roll: roll * 180.0 / PI,
-                    pitch: pitch * 180.0 / PI,
-                    yaw: yaw * 180.0 / PI,
+                    roll: radian_to_degree(roll),
+                    pitch: radian_to_degree(pitch),
+                    yaw: radian_to_degree(yaw),
                 },
                 framenumber,
             );
