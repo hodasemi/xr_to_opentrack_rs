@@ -1,12 +1,12 @@
 #![allow(unused)]
 
-use std::{ffi::CString, ptr};
+use std::{ffi::CString, marker::PhantomData, ptr};
 
 use anyhow::{bail, Result};
 use libc::*;
 
-pub struct FtokIPC<T: Default + Copy, const N: usize> {
-    buffer: [T; N],
+pub struct FtokIPC<T: Default, const N: usize> {
+    mmap_type: PhantomData<[T; N]>,
     addr: *mut c_void,
 }
 
@@ -33,25 +33,27 @@ impl<T: Default + Copy, const N: usize> FtokIPC<T, N> {
         }
 
         Ok(Self {
-            buffer: [T::default(); N],
+            mmap_type: PhantomData,
             addr,
         })
     }
 
     pub fn read(&mut self) -> [T; N] {
+        let mut buffer = [T::default(); N];
+
         unsafe {
             memcpy(
-                self.buffer.as_mut_ptr() as *mut c_void,
+                buffer.as_mut_ptr() as *mut c_void,
                 self.addr,
                 size_of::<T>() * N,
             )
         };
 
-        self.buffer
+        buffer
     }
 }
 
-impl<T: Default + Copy, const N: usize> Drop for FtokIPC<T, N> {
+impl<T: Default, const N: usize> Drop for FtokIPC<T, N> {
     fn drop(&mut self) {
         let res = unsafe { shmdt(self.addr) };
 
